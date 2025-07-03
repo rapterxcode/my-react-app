@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import Header from './components/Header';
 import TodoList from './components/TodoList';
-import type { Todo } from './types';
+import TodoFilter from './components/TodoFilter';
+import AddTodo from './components/AddTodo';
+import type { Todo, FilterOptions, SortOption } from './types';
 import './App.css';
 
 const App: React.FC = () => {
@@ -10,34 +12,74 @@ const App: React.FC = () => {
       id: 1,
       text: 'Learn React with TypeScript',
       completed: false,
-      createdAt: new Date()
+      priority: 'high',
+      category: 'Learning',
+      createdAt: new Date(),
+      updatedAt: new Date()
     },
     {
       id: 2,
       text: 'Setup Vite project',
       completed: true,
-      createdAt: new Date()
+      priority: 'medium',
+      category: 'Development',
+      createdAt: new Date(),
+      updatedAt: new Date()
     }
   ]);
 
-  const [inputText, setInputText] = useState<string>('');
+  const [filters, setFilters] = useState<FilterOptions>({
+    status: 'all',
+    priority: 'all',
+    category: ''
+  });
 
-  const addTodo = () => {
-    if (inputText.trim()) {
-      const newTodo: Todo = {
-        id: Date.now(),
-        text: inputText.trim(),
-        completed: false,
-        createdAt: new Date()
-      };
-      setTodos([...todos, newTodo]);
-      setInputText('');
-    }
+  const [sortBy, setSortBy] = useState<SortOption>('date');
+
+  // Get unique categories
+  const categories = useMemo(() => {
+    return Array.from(new Set(todos.map(todo => todo.category).filter(Boolean)));
+  }, [todos]);
+
+  // Filter and sort todos
+  const filteredAndSortedTodos = useMemo(() => {
+    let filtered = todos.filter(todo => {
+      if (filters.status === 'completed' && !todo.completed) return false;
+      if (filters.status === 'pending' && todo.completed) return false;
+      if (filters.priority !== 'all' && todo.priority !== filters.priority) return false;
+      if (filters.category && todo.category !== filters.category) return false;
+      return true;
+    });
+
+    return filtered.sort((a, b) => {
+      switch (sortBy) {
+        case 'priority':
+          const priorityOrder = { high: 3, medium: 2, low: 1 };
+          return priorityOrder[b.priority] - priorityOrder[a.priority];
+        case 'alphabetical':
+          return a.text.localeCompare(b.text);
+        case 'date':
+        default:
+          return b.createdAt.getTime() - a.createdAt.getTime();
+      }
+    });
+  }, [todos, filters, sortBy]);
+
+  const addTodo = (todoData: Omit<Todo, 'id' | 'createdAt' | 'updatedAt'>) => {
+    const newTodo: Todo = {
+      ...todoData,
+      id: Date.now(),
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    setTodos([...todos, newTodo]);
   };
 
   const toggleTodo = (id: number) => {
     setTodos(todos.map(todo => 
-      todo.id === id ? { ...todo, completed: !todo.completed } : todo
+      todo.id === id 
+        ? { ...todo, completed: !todo.completed, updatedAt: new Date() } 
+        : todo
     ));
   };
 
@@ -45,25 +87,57 @@ const App: React.FC = () => {
     setTodos(todos.filter(todo => todo.id !== id));
   };
 
+  const editTodo = (id: number, newText: string) => {
+    setTodos(todos.map(todo => 
+      todo.id === id 
+        ? { ...todo, text: newText, updatedAt: new Date() } 
+        : todo
+    ));
+  };
+
+  const stats = useMemo(() => {
+    const completed = todos.filter(t => t.completed).length;
+    const pending = todos.length - completed;
+    const highPriority = todos.filter(t => t.priority === 'high' && !t.completed).length;
+    
+    return { total: todos.length, completed, pending, highPriority };
+  }, [todos]);
+
   return (
     <div className="App">
-      <Header title="Todo App v1.0" todoCount={todos.length} />
+      <Header title="Todo App v2.0" todoCount={stats.total} />
       
-      <div style={{ padding: '20px', textAlign: 'center' }}>
-        <input
-          type="text"
-          value={inputText}
-          onChange={(e) => setInputText(e.target.value)}
-          onKeyPress={(e) => e.key === 'Enter' && addTodo()}
-          placeholder="Add new todo..."
-          style={{ padding: '10px', marginRight: '10px', width: '300px' }}
-        />
-        <button onClick={addTodo} style={{ padding: '10px 20px' }}>
-          Add Todo
-        </button>
+      <div style={{ padding: '20px', textAlign: 'center', backgroundColor: '#e9ecef' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '20px', marginBottom: '10px' }}>
+          <span>📝 Total: {stats.total}</span>
+          <span>✅ Completed: {stats.completed}</span>
+          <span>⏳ Pending: {stats.pending}</span>
+          <span>🔥 High Priority: {stats.highPriority}</span>
+        </div>
       </div>
 
-      <TodoList todos={todos} onToggle={toggleTodo} onDelete={deleteTodo} />
+      <AddTodo onAdd={addTodo} categories={categories} />
+      
+      <TodoFilter
+        filters={filters}
+        sortBy={sortBy}
+        categories={categories}
+        onFilterChange={setFilters}
+        onSortChange={setSortBy}
+      />
+
+      <TodoList 
+        todos={filteredAndSortedTodos} 
+        onToggle={toggleTodo} 
+        onDelete={deleteTodo}
+        onEdit={editTodo}
+      />
+
+      {filteredAndSortedTodos.length === 0 && todos.length > 0 && (
+        <p style={{ textAlign: 'center', margin: '20px', color: '#666' }}>
+          No todos match current filters
+        </p>
+      )}
     </div>
   );
 };
